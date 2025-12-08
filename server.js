@@ -122,18 +122,23 @@ async function buscarHorariosDisponibles(fecha) {
       throw new Error('Google Calendar no está configurado');
     }
 
-    const startOfDay = new Date(fecha);
-    startOfDay.setHours(0, 0, 0, 0);
+    // Crear fechas en zona horaria de Lima (UTC-5)
+    // Convertir la fecha recibida a inicio y fin del día en Lima
+    const year = fecha.getFullYear();
+    const month = fecha.getMonth();
+    const day = fecha.getDate();
     
-    const endOfDay = new Date(fecha);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Crear fecha específica en Lima (ajustando por zona horaria)
+    const startOfDay = new Date(Date.UTC(year, month, day, 5, 0, 0, 0)); // 00:00 Lima = 05:00 UTC
+    const endOfDay = new Date(Date.UTC(year, month, day + 1, 4, 59, 59, 999)); // 23:59 Lima = 04:59 UTC del día siguiente
 
     const response = await calendar.events.list({
       calendarId: process.env.GOOGLE_CALENDAR_ID,
       timeMin: startOfDay.toISOString(),
       timeMax: endOfDay.toISOString(),
       singleEvents: true,
-      orderBy: 'startTime'
+      orderBy: 'startTime',
+      timeZone: 'America/Lima'
     });
 
     const eventos = response.data.items || [];
@@ -142,18 +147,16 @@ async function buscarHorariosDisponibles(fecha) {
       fin: new Date(e.end.dateTime || e.end.date)
     }));
 
-    // Generar horarios disponibles entre 9 AM y 5 PM
+    // Generar horarios disponibles entre 9 AM y 5 PM (hora de Lima)
     const horariosDisponibles = [];
     const horaInicio = 9; // 9 AM
     const horaFin = 17; // 5 PM
     
     for (let hora = horaInicio; hora < horaFin; hora++) {
       for (let minuto = 0; minuto < 60; minuto += 30) {
-        const horario = new Date(fecha);
-        horario.setHours(hora, minuto, 0, 0);
-        
-        const horarioFin = new Date(horario);
-        horarioFin.setMinutes(horarioFin.getMinutes() + 30);
+        // Crear horario en UTC ajustado para Lima (UTC-5)
+        const horario = new Date(Date.UTC(year, month, day, hora + 5, minuto, 0, 0));
+        const horarioFin = new Date(horario.getTime() + 30 * 60000);
         
         const estaOcupado = horariosOcupados.some(ocupado => 
           (horario >= ocupado.inicio && horario < ocupado.fin) ||
@@ -363,9 +366,12 @@ Ejemplo: 15/12/2024`;
             
             response = `Los horarios disponibles son:\n\n`;
             horarios.forEach((h, i) => {
-              response += `${i + 1}.- ${h.toLocaleTimeString('es-ES', { 
+              // Mostrar la hora en formato de Lima (restando 5 horas de UTC)
+              const horaLima = new Date(h.getTime() - 5 * 60 * 60 * 1000);
+              response += `${i + 1}.- ${horaLima.toLocaleTimeString('es-PE', { 
                 hour: '2-digit', 
-                minute: '2-digit' 
+                minute: '2-digit',
+                timeZone: 'America/Lima'
               })}\n`;
             });
             response += '\nPor favor elige un número del 1 al 3';
