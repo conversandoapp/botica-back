@@ -24,19 +24,43 @@ let calendar;
 try {
   let credentials;
   
+  console.log('🔍 Iniciando configuración de Google Calendar...');
+  console.log('🔍 GOOGLE_SERVICE_ACCOUNT_KEY existe?', !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+  console.log('🔍 GOOGLE_CLIENT_EMAIL existe?', !!process.env.GOOGLE_CLIENT_EMAIL);
+  console.log('🔍 GOOGLE_PRIVATE_KEY existe?', !!process.env.GOOGLE_PRIVATE_KEY);
+  
   // Intentar diferentes formas de parsear las credenciales
   if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    console.log('📄 Usando GOOGLE_SERVICE_ACCOUNT_KEY (JSON completo)');
     try {
       // Parsear el JSON
       credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
       
+      console.log('✅ JSON parseado correctamente');
+      console.log('📋 project_id:', credentials.project_id);
+      console.log('📋 client_email:', credentials.client_email);
+      
       // CRÍTICO: Asegurar que el private_key tenga los saltos de línea correctos
       if (credentials.private_key) {
+        const keyBefore = credentials.private_key.substring(0, 50);
+        console.log('🔑 Private key (primeros 50 chars):', keyBefore);
+        console.log('🔑 Private key longitud ANTES:', credentials.private_key.length);
+        console.log('🔑 Tiene \\n literales?', credentials.private_key.includes('\\n'));
+        console.log('🔑 Tiene saltos de línea reales?', credentials.private_key.includes('\n'));
+        
         // Si el private_key tiene \\n literales, convertirlos a saltos de línea reales
+        const originalLength = credentials.private_key.length;
         credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
         
-        console.log('🔑 Private key verificado - longitud:', credentials.private_key.length);
-        console.log('🔑 Tiene saltos de línea:', credentials.private_key.includes('\n'));
+        console.log('🔑 Private key longitud DESPUÉS:', credentials.private_key.length);
+        console.log('🔑 Se aplicó conversión?', originalLength !== credentials.private_key.length);
+        console.log('🔑 Tiene saltos de línea AHORA?', credentials.private_key.includes('\n'));
+        
+        // Verificar estructura
+        const startsCorrect = credentials.private_key.startsWith('-----BEGIN PRIVATE KEY-----');
+        const endsCorrect = credentials.private_key.trim().endsWith('-----END PRIVATE KEY-----');
+        console.log('🔑 Empieza con BEGIN?', startsCorrect);
+        console.log('🔑 Termina con END?', endsCorrect);
       }
       
     } catch (parseError) {
@@ -46,18 +70,28 @@ try {
   } 
   // Opción alternativa: usar variables individuales
   else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-    console.log('📝 Usando credenciales individuales');
+    console.log('📝 Usando credenciales individuales (variables separadas)');
+    
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+    console.log('🔑 Private key (primeros 50 chars):', privateKey.substring(0, 50));
+    console.log('🔑 Private key longitud:', privateKey.length);
+    console.log('🔑 Tiene \\n literales?', privateKey.includes('\\n'));
+    console.log('🔑 Tiene saltos de línea reales?', privateKey.includes('\n'));
+    
     credentials = {
       type: 'service_account',
       project_id: process.env.GOOGLE_PROJECT_ID,
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      private_key: privateKey.replace(/\\n/g, '\n'),
       token_uri: 'https://oauth2.googleapis.com/token'
     };
+    
+    console.log('🔑 Después de conversión - tiene saltos?', credentials.private_key.includes('\n'));
   } else {
     throw new Error('No se encontraron credenciales de Google Calendar');
   }
 
+  console.log('🔧 Creando GoogleAuth...');
   const auth = new google.auth.GoogleAuth({
     credentials: credentials,
     scopes: ['https://www.googleapis.com/auth/calendar']
@@ -69,7 +103,7 @@ try {
   
 } catch (error) {
   console.error('❌ Error al configurar Google Calendar:', error.message);
-  console.error('💡 Verifica que GOOGLE_SERVICE_ACCOUNT_KEY esté correctamente configurado');
+  console.error('💡 Verifica que las credenciales estén correctamente configuradas');
 }
 
 // Almacenamiento temporal de estados de conversación
