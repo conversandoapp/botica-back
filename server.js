@@ -18,13 +18,46 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Configuración de Google Calendar con Service Account
+// Configuración de Google Calendar con Service Account (manejo mejorado)
 let calendar;
 
 try {
-  // Parsear las credenciales del service account desde la variable de entorno
-  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+  let credentials;
   
+  // Intentar diferentes formas de parsear las credenciales
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    try {
+      // Parsear el JSON
+      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+      
+      // CRÍTICO: Asegurar que el private_key tenga los saltos de línea correctos
+      if (credentials.private_key) {
+        // Si el private_key tiene \\n literales, convertirlos a saltos de línea reales
+        credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+        
+        console.log('🔑 Private key verificado - longitud:', credentials.private_key.length);
+        console.log('🔑 Tiene saltos de línea:', credentials.private_key.includes('\n'));
+      }
+      
+    } catch (parseError) {
+      console.error('❌ Error parseando GOOGLE_SERVICE_ACCOUNT_KEY:', parseError.message);
+      throw parseError;
+    }
+  } 
+  // Opción alternativa: usar variables individuales
+  else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    console.log('📝 Usando credenciales individuales');
+    credentials = {
+      type: 'service_account',
+      project_id: process.env.GOOGLE_PROJECT_ID,
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      token_uri: 'https://oauth2.googleapis.com/token'
+    };
+  } else {
+    throw new Error('No se encontraron credenciales de Google Calendar');
+  }
+
   const auth = new google.auth.GoogleAuth({
     credentials: credentials,
     scopes: ['https://www.googleapis.com/auth/calendar']
@@ -32,8 +65,11 @@ try {
 
   calendar = google.calendar({ version: 'v3', auth });
   console.log('✅ Google Calendar configurado correctamente');
+  console.log('📧 Service Account Email:', credentials.client_email);
+  
 } catch (error) {
   console.error('❌ Error al configurar Google Calendar:', error.message);
+  console.error('💡 Verifica que GOOGLE_SERVICE_ACCOUNT_KEY esté correctamente configurado');
 }
 
 // Almacenamiento temporal de estados de conversación
@@ -48,6 +84,10 @@ const medicamentos = [
 // Función para buscar horarios disponibles en Google Calendar
 async function buscarHorariosDisponibles(fecha) {
   try {
+    if (!calendar) {
+      throw new Error('Google Calendar no está configurado');
+    }
+
     const startOfDay = new Date(fecha);
     startOfDay.setHours(0, 0, 0, 0);
     
@@ -106,6 +146,10 @@ async function buscarHorariosDisponibles(fecha) {
 // Función para crear evento en Google Calendar
 async function crearEvento(fecha, email) {
   try {
+    if (!calendar) {
+      throw new Error('Google Calendar no está configurado');
+    }
+
     const evento = {
       summary: 'Cita Médica - BOTica',
       description: 'Cita agendada a través del chatbot BOTica',
@@ -296,8 +340,9 @@ Ejemplo: 15/12/2024`;
             state.step = 'agendar_otra_fecha';
           }
         } catch (error) {
-          response = 'Ocurrió un error al verificar los horarios. Por favor intenta nuevamente.';
-          state.step = 'agendar_fecha';
+          console.error('Error en verificar horarios:', error);
+          response = 'Ocurrió un error al verificar los horarios. Por favor intenta nuevamente más tarde.';
+          state.step = 'menu';
         }
         break;
 
@@ -331,6 +376,7 @@ Ejemplo: 15/12/2024`;
 ¿Hay algo más en lo que pueda ayudarte?`;
             state.step = 'menu';
           } catch (error) {
+            console.error('Error al crear evento:', error);
             response = 'Ocurrió un error al crear la cita. Por favor intenta nuevamente o contacta al administrador.';
             state.step = 'menu';
           }
