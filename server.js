@@ -18,13 +18,14 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Configuración de Google Calendar con Service Account (manejo mejorado)
+// Configuración de Google Services (Calendar y Sheets) con Service Account
 let calendar;
+let sheets;
 
 try {
   let credentials;
   
-  console.log('🔍 Iniciando configuración de Google Calendar...');
+  console.log('🔍 Iniciando configuración de Google Services...');
   console.log('🔍 GOOGLE_SERVICE_ACCOUNT_KEY existe?', !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
   console.log('🔍 GOOGLE_CLIENT_EMAIL existe?', !!process.env.GOOGLE_CLIENT_EMAIL);
   console.log('🔍 GOOGLE_PRIVATE_KEY existe?', !!process.env.GOOGLE_PRIVATE_KEY);
@@ -33,34 +34,13 @@ try {
   if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
     console.log('📄 Usando GOOGLE_SERVICE_ACCOUNT_KEY (JSON completo)');
     try {
-      // Parsear el JSON
       credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
-      
       console.log('✅ JSON parseado correctamente');
       console.log('📋 project_id:', credentials.project_id);
       console.log('📋 client_email:', credentials.client_email);
       
-      // CRÍTICO: Asegurar que el private_key tenga los saltos de línea correctos
       if (credentials.private_key) {
-        const keyBefore = credentials.private_key.substring(0, 50);
-        console.log('🔑 Private key (primeros 50 chars):', keyBefore);
-        console.log('🔑 Private key longitud ANTES:', credentials.private_key.length);
-        console.log('🔑 Tiene \\n literales?', credentials.private_key.includes('\\n'));
-        console.log('🔑 Tiene saltos de línea reales?', credentials.private_key.includes('\n'));
-        
-        // Si el private_key tiene \\n literales, convertirlos a saltos de línea reales
-        const originalLength = credentials.private_key.length;
         credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
-        
-        console.log('🔑 Private key longitud DESPUÉS:', credentials.private_key.length);
-        console.log('🔑 Se aplicó conversión?', originalLength !== credentials.private_key.length);
-        console.log('🔑 Tiene saltos de línea AHORA?', credentials.private_key.includes('\n'));
-        
-        // Verificar estructura
-        const startsCorrect = credentials.private_key.startsWith('-----BEGIN PRIVATE KEY-----');
-        const endsCorrect = credentials.private_key.trim().endsWith('-----END PRIVATE KEY-----');
-        console.log('🔑 Empieza con BEGIN?', startsCorrect);
-        console.log('🔑 Termina con END?', endsCorrect);
       }
       
     } catch (parseError) {
@@ -72,48 +52,102 @@ try {
   else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
     console.log('📝 Usando credenciales individuales (variables separadas)');
     
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY;
-    console.log('🔑 Private key (primeros 50 chars):', privateKey.substring(0, 50));
-    console.log('🔑 Private key longitud:', privateKey.length);
-    console.log('🔑 Tiene \\n literales?', privateKey.includes('\\n'));
-    console.log('🔑 Tiene saltos de línea reales?', privateKey.includes('\n'));
-    
     credentials = {
       type: 'service_account',
       project_id: process.env.GOOGLE_PROJECT_ID,
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: privateKey.replace(/\\n/g, '\n'),
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       token_uri: 'https://oauth2.googleapis.com/token'
     };
-    
-    console.log('🔑 Después de conversión - tiene saltos?', credentials.private_key.includes('\n'));
   } else {
-    throw new Error('No se encontraron credenciales de Google Calendar');
+    throw new Error('No se encontraron credenciales de Google');
   }
 
   console.log('🔧 Creando GoogleAuth...');
   const auth = new google.auth.GoogleAuth({
     credentials: credentials,
-    scopes: ['https://www.googleapis.com/auth/calendar']
+    scopes: [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/spreadsheets.readonly'
+    ]
   });
 
+  // Configurar Calendar
   calendar = google.calendar({ version: 'v3', auth });
   console.log('✅ Google Calendar configurado correctamente');
+  
+  // Configurar Sheets
+  sheets = google.sheets({ version: 'v4', auth });
+  console.log('✅ Google Sheets configurado correctamente');
+  
   console.log('📧 Service Account Email:', credentials.client_email);
   
 } catch (error) {
-  console.error('❌ Error al configurar Google Calendar:', error.message);
+  console.error('❌ Error al configurar Google Services:', error.message);
   console.error('💡 Verifica que las credenciales estén correctamente configuradas');
 }
 
 // Almacenamiento temporal de estados de conversación
 const conversationStates = new Map();
 
-// Lista de medicamentos (simulada - puedes reemplazar con una base de datos)
-const medicamentos = [
-  'Paracetamol', 'Ibuprofeno', 'Amoxicilina', 'Aspirina', 'Omeprazol',
-  'Loratadina', 'Diclofenaco', 'Ranitidina', 'Metformina', 'Atorvastatina'
-];
+// Función para buscar medicamento en Google Sheets
+async function buscarMedicamentoEnSheet(nombreBuscado) {
+  try {
+    if (!sheets) {
+      throw new Error('Google Sheets no está configurado');
+    }
+
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+    const range = process.env.GOOGLE_SHEET_RANGE || 'Sheet1!A:O'; // Rango por defecto
+    
+    console.log('📊 Consultando Google Sheet:', spreadsheetId);
+    
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: range,
+    });
+
+    const rows = response.data.values;
+    
+    if (!rows || rows.length === 0) {
+      console.log('⚠️ No se encontraron datos en la hoja');
+      return null;
+    }
+
+    // Saltar la primera fila (encabezados)
+    const dataRows = rows.slice(1);
+    
+    const nombreBuscadoLower = nombreBuscado.toLowerCase().trim();
+    
+    // Buscar en los datos
+    for (const row of dataRows) {
+      const nombreMedicamento = row[1] ? row[1].toString().trim() : ''; // Columna B (índice 1)
+      const stock = row[10] ? row[10].toString().trim() : '0'; // Columna K (índice 10)
+      const requiereReceta = row[14] ? row[14].toString().trim() : 'No'; // Columna O (índice 14)
+      
+      // Búsqueda flexible: permite coincidencias parciales
+      if (nombreMedicamento.toLowerCase().includes(nombreBuscadoLower) || 
+          nombreBuscadoLower.includes(nombreMedicamento.toLowerCase())) {
+        
+        const stockNumerico = parseInt(stock) || 0;
+        
+        return {
+          nombre: nombreMedicamento,
+          stock: stockNumerico,
+          enStock: stockNumerico > 0,
+          requiereReceta: requiereReceta.toLowerCase() === 'si' || requiereReceta.toLowerCase() === 'sí'
+        };
+      }
+    }
+    
+    // No se encontró el medicamento
+    return null;
+    
+  } catch (error) {
+    console.error('❌ Error al buscar en Google Sheets:', error.message);
+    throw error;
+  }
+}
 
 // Función para buscar horarios disponibles en Google Calendar
 async function buscarHorariosDisponibles(fecha) {
@@ -229,15 +263,6 @@ async function crearEvento(fecha, email) {
 function esEmailValido(email) {
   const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return regex.test(email);
-}
-
-// Función para buscar medicamento
-function buscarMedicamento(nombre) {
-  const nombreLower = nombre.toLowerCase();
-  return medicamentos.find(med => 
-    med.toLowerCase().includes(nombreLower) || 
-    nombreLower.includes(med.toLowerCase())
-  );
 }
 
 // Función para formatear fecha en hora de Lima
@@ -436,16 +461,37 @@ Ejemplo: 15/12/2024`;
         break;
 
       case 'medicamento_buscar':
-        const medicamento = buscarMedicamento(message);
-        
-        if (medicamento) {
-          response = `El producto "${medicamento}" se encuentra en stock. Puedes acercarte a comprarlo.
-
-Por favor indícame si te puedo ayudar en algo adicional`;
+        try {
+          const medicamento = await buscarMedicamentoEnSheet(message);
+          
+          if (medicamento && medicamento.enStock) {
+            let respuesta = `El producto "${medicamento.nombre}" se encuentra en stock`;
+            
+            // Agregar información sobre cantidad si está disponible
+            if (medicamento.stock > 0) {
+              respuesta += ` (${medicamento.stock} unidades disponibles)`;
+            }
+            
+            // Agregar información sobre receta médica
+            if (medicamento.requiereReceta) {
+              respuesta += `.\n\n⚠️ Este medicamento requiere receta médica para su venta`;
+            }
+            
+            respuesta += `.\n\nPuedes acercarte a comprarlo. Por favor indícame si te puedo ayudar en algo adicional`;
+            
+            response = respuesta;
+            state.step = 'menu';
+          } else if (medicamento && !medicamento.enStock) {
+            response = `El producto "${medicamento.nombre}" existe en nuestro catálogo pero actualmente no tiene stock disponible. ¿Deseas probar con otro medicamento? (Sí/No)`;
+            state.step = 'medicamento_reintentar';
+          } else {
+            response = 'El producto no se encuentra en nuestro catálogo. ¿Deseas probar con otro? (Sí/No)';
+            state.step = 'medicamento_reintentar';
+          }
+        } catch (error) {
+          console.error('Error al buscar medicamento:', error);
+          response = 'Ocurrió un error al consultar el inventario. Por favor intenta nuevamente.';
           state.step = 'menu';
-        } else {
-          response = 'El producto no se encuentra en stock. ¿Deseas probar con otro? (Sí/No)';
-          state.step = 'medicamento_reintentar';
         }
         break;
 
@@ -511,6 +557,7 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     calendar: calendar ? 'Connected' : 'Not configured',
+    sheets: sheets ? 'Connected' : 'Not configured',
     openai: process.env.OPENAI_API_KEY ? 'Configured' : 'Not configured'
   });
 });
