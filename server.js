@@ -186,7 +186,7 @@ async function crearEvento(fecha, email) {
 
     const evento = {
       summary: 'Cita Médica - BOTica',
-      description: 'Cita agendada a través del chatbot BOTica',
+      description: `Cita agendada a través del chatbot BOTica\nPaciente: ${email}`,
       start: {
         dateTime: fecha.toISOString(),
         timeZone: 'America/Lima'
@@ -195,12 +195,13 @@ async function crearEvento(fecha, email) {
         dateTime: new Date(fecha.getTime() + 30 * 60000).toISOString(),
         timeZone: 'America/Lima'
       },
-      attendees: [{ email: email }],
+      // No incluimos attendees para evitar el error de Service Account
+      // El email del paciente se guarda en la descripción
       reminders: {
         useDefault: false,
         overrides: [
-          { method: 'email', minutes: 24 * 60 },
-          { method: 'popup', minutes: 30 }
+          { method: 'popup', minutes: 1440 }, // 1 día antes
+          { method: 'popup', minutes: 30 }    // 30 minutos antes
         ]
       }
     };
@@ -208,9 +209,10 @@ async function crearEvento(fecha, email) {
     const response = await calendar.events.insert({
       calendarId: process.env.GOOGLE_CALENDAR_ID,
       resource: evento,
-      sendUpdates: 'all'
+      sendUpdates: 'none' // Cambiado de 'all' a 'none'
     });
 
+    console.log('✅ Evento creado exitosamente:', response.data.id);
     return response.data;
   } catch (error) {
     console.error('Error al crear evento:', error);
