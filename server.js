@@ -18,18 +18,23 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Configuración de Google Calendar
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
+// Configuración de Google Calendar con Service Account
+let calendar;
 
-oauth2Client.setCredentials({
-  refresh_token: process.env.GOOGLE_REFRESH_TOKEN
-});
+try {
+  // Parsear las credenciales del service account desde la variable de entorno
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+  
+  const auth = new google.auth.GoogleAuth({
+    credentials: credentials,
+    scopes: ['https://www.googleapis.com/auth/calendar']
+  });
 
-const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+  calendar = google.calendar({ version: 'v3', auth });
+  console.log('✅ Google Calendar configurado correctamente');
+} catch (error) {
+  console.error('❌ Error al configurar Google Calendar:', error.message);
+}
 
 // Almacenamiento temporal de estados de conversación
 const conversationStates = new Map();
@@ -50,7 +55,7 @@ async function buscarHorariosDisponibles(fecha) {
     endOfDay.setHours(23, 59, 59, 999);
 
     const response = await calendar.events.list({
-      calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
       timeMin: startOfDay.toISOString(),
       timeMax: endOfDay.toISOString(),
       singleEvents: true,
@@ -94,7 +99,7 @@ async function buscarHorariosDisponibles(fecha) {
     return horariosDisponibles;
   } catch (error) {
     console.error('Error al buscar horarios:', error);
-    return [];
+    throw error;
   }
 }
 
@@ -123,7 +128,7 @@ async function crearEvento(fecha, email) {
     };
 
     const response = await calendar.events.insert({
-      calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
       resource: evento,
       sendUpdates: 'all'
     });
@@ -411,9 +416,14 @@ Por favor indícame si te puedo ayudar en algo adicional`;
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    calendar: calendar ? 'Connected' : 'Not configured',
+    openai: process.env.OPENAI_API_KEY ? 'Configured' : 'Not configured'
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor escuchando en puerto ${PORT}`);
+  console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
 });
