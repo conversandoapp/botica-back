@@ -122,15 +122,16 @@ async function buscarHorariosDisponibles(fecha) {
       throw new Error('Google Calendar no está configurado');
     }
 
-    // Crear fechas en zona horaria de Lima (UTC-5)
-    // Convertir la fecha recibida a inicio y fin del día en Lima
+    // Obtener año, mes y día de la fecha recibida
     const year = fecha.getFullYear();
     const month = fecha.getMonth();
     const day = fecha.getDate();
     
-    // Crear fecha específica en Lima (ajustando por zona horaria)
-    const startOfDay = new Date(Date.UTC(year, month, day, 5, 0, 0, 0)); // 00:00 Lima = 05:00 UTC
-    const endOfDay = new Date(Date.UTC(year, month, day + 1, 4, 59, 59, 999)); // 23:59 Lima = 04:59 UTC del día siguiente
+    // Crear inicio y fin del día en hora de Lima
+    // 00:00 Lima = 05:00 UTC del mismo día
+    const startOfDay = new Date(Date.UTC(year, month, day, 5, 0, 0, 0));
+    // 23:59 Lima = 04:59 UTC del día siguiente
+    const endOfDay = new Date(Date.UTC(year, month, day + 1, 4, 59, 59, 999));
 
     const response = await calendar.events.list({
       calendarId: process.env.GOOGLE_CALENDAR_ID,
@@ -149,12 +150,13 @@ async function buscarHorariosDisponibles(fecha) {
 
     // Generar horarios disponibles entre 9 AM y 5 PM (hora de Lima)
     const horariosDisponibles = [];
-    const horaInicio = 9; // 9 AM
-    const horaFin = 17; // 5 PM
+    const horaInicio = 9; // 9 AM Lima
+    const horaFin = 17; // 5 PM Lima
     
     for (let hora = horaInicio; hora < horaFin; hora++) {
       for (let minuto = 0; minuto < 60; minuto += 30) {
-        // Crear horario en UTC ajustado para Lima (UTC-5)
+        // Crear horario en UTC: hora de Lima + 5 horas
+        // Por ejemplo: 9 AM Lima = 14:00 UTC (9 + 5)
         const horario = new Date(Date.UTC(year, month, day, hora + 5, minuto, 0, 0));
         const horarioFin = new Date(horario.getTime() + 30 * 60000);
         
@@ -238,9 +240,10 @@ function buscarMedicamento(nombre) {
   );
 }
 
-// Función para formatear fecha
+// Función para formatear fecha en hora de Lima
 function formatearFecha(fecha) {
-  return new Intl.DateTimeFormat('es-ES', {
+  // Formatear directamente en zona horaria de Lima
+  return new Intl.DateTimeFormat('es-PE', {
     dateStyle: 'full',
     timeStyle: 'short',
     timeZone: 'America/Lima'
@@ -366,12 +369,12 @@ Ejemplo: 15/12/2024`;
             
             response = `Los horarios disponibles son:\n\n`;
             horarios.forEach((h, i) => {
-              // Mostrar la hora en formato de Lima (restando 5 horas de UTC)
-              const horaLima = new Date(h.getTime() - 5 * 60 * 60 * 1000);
+              // Convertir UTC a hora de Lima para mostrar
+              const horaLima = new Date(h.toLocaleString('en-US', { timeZone: 'America/Lima' }));
               response += `${i + 1}.- ${horaLima.toLocaleTimeString('es-PE', { 
                 hour: '2-digit', 
                 minute: '2-digit',
-                timeZone: 'America/Lima'
+                hour12: true
               })}\n`;
             });
             response += '\nPor favor elige un número del 1 al 3';
