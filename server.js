@@ -259,15 +259,6 @@ async function crearEvento(fecha, email) {
   }
 }
 
-// Función para normalizar texto (quitar tildes y caracteres especiales)
-function normalizarTexto(texto) {
-  return texto
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Quitar tildes
-    .toLowerCase()
-    .trim();
-}
-
 // Función para validar email
 function esEmailValido(email) {
   const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -339,39 +330,19 @@ app.post('/api/chat', async (req, res) => {
 
     let response = '';
     
-    // Detectar navegación forzada y normalizar entrada
-    const mensajeLower = message.toLowerCase().trim();
-    const mensajeNormalizado = normalizarTexto(mensajeLower);
-    
-    // Detectar si quiere volver al menú
-    if (mensajeNormalizado.includes('menu') || 
-        mensajeNormalizado.includes('inicio') || 
-        mensajeNormalizado.includes('volver') ||
+    // Detectar navegación forzada
+    const mensajeLower = message.toLowerCase();
+    if (mensajeLower.includes('menú principal') || 
+        mensajeLower.includes('volver al inicio') || 
         mensajeLower === '0') {
       state = { step: 'menu', data: {} };
-    } 
-    // Detectar si quiere agendar cita
-    else if (mensajeLower === '1' || 
-             mensajeNormalizado.includes('agendar') || 
-             mensajeNormalizado.includes('cita') ||
-             mensajeNormalizado.includes('especialidad')) {
+    } else if (mensajeLower.includes('agendar cita')) {
       state = { step: 'agendar_fecha', data: {} };
-    } 
-    // Detectar si quiere consultar medicamentos
-    else if (mensajeLower === '2' ||
-             mensajeNormalizado.includes('stock') || 
-             mensajeNormalizado.includes('medicamento') ||
-             mensajeNormalizado.includes('medicina') ||
-             mensajeNormalizado.includes('farmacia')) {
+    } else if (mensajeLower.includes('consultar stock') || 
+               mensajeLower.includes('stock de medicamentos')) {
       state = { step: 'medicamento_nombre', data: {} };
-    } 
-    // Detectar si quiere consultar hábitos de higiene
-    else if (mensajeLower === '3' ||
-             mensajeNormalizado.includes('habito') || 
-             mensajeNormalizado.includes('higiene') ||
-             mensajeNormalizado.includes('limpieza') ||
-             mensajeNormalizado.includes('limpiar') ||
-             mensajeNormalizado.includes('aseo')) {
+    } else if (mensajeLower.includes('hábitos de higiene') || 
+               mensajeLower.includes('habitos de higiene')) {
       state = { step: 'higiene_consulta', data: {} };
     }
 
@@ -384,23 +355,11 @@ app.post('/api/chat', async (req, res) => {
 2.- Consultar stock de medicamentos
 3.- Consultar buenos hábitos de higiene`;
         
-        // Detectar selección por número o por palabras clave
-        const opcionNormalizada = normalizarTexto(message);
-        
-        if (message.trim() === '1' || 
-            opcionNormalizada.includes('agendar') || 
-            opcionNormalizada.includes('cita') ||
-            opcionNormalizada.includes('especialidad')) {
+        if (message === '1') {
           state.step = 'agendar_fecha';
-        } else if (message.trim() === '2' || 
-                   opcionNormalizada.includes('stock') || 
-                   opcionNormalizada.includes('medicamento') ||
-                   opcionNormalizada.includes('medicina')) {
+        } else if (message === '2') {
           state.step = 'medicamento_nombre';
-        } else if (message.trim() === '3' || 
-                   opcionNormalizada.includes('habito') || 
-                   opcionNormalizada.includes('higiene') ||
-                   opcionNormalizada.includes('limpieza')) {
+        } else if (message === '3') {
           state.step = 'higiene_consulta';
         }
         break;
@@ -548,55 +507,17 @@ Ejemplo: 15/12/2024`;
 
       case 'higiene_consulta':
         try {
-          const consultaNormalizada = normalizarTexto(message);
-          
           // Verificar si quiere volver al menú o cambiar de opción
-          if (consultaNormalizada.includes('agendar') || consultaNormalizada.includes('cita')) {
+          if (mensajeLower.includes('agendar cita')) {
             state = { step: 'agendar_fecha', data: {} };
             response = 'Por favor indica en qué día deseas agendar la cita (formato DD/MM/YYYY)';
-          } else if (consultaNormalizada.includes('stock') || 
-                     consultaNormalizada.includes('medicamento')) {
+          } else if (mensajeLower.includes('consultar stock') || 
+                     mensajeLower.includes('stock de medicamentos')) {
             state = { step: 'medicamento_nombre', data: {} };
             response = 'Por favor escribe el nombre del medicamento que estás buscando';
           } else {
             const resultado = await consultarAsistente(message, state.data.assistantThreadId);
-            
-            // Procesar la respuesta para limpiar listas numeradas mal formateadas
-            let respuestaLimpia = resultado.respuesta;
-            
-            // Detectar y corregir listas numeradas que vienen del asistente
-            // Patrón: líneas que empiezan con número seguido de punto
-            const lineas = respuestaLimpia.split('\n');
-            let dentroLista = false;
-            let contadorLista = 1;
-            
-            const lineasProcesadas = lineas.map((linea, index) => {
-              // Detectar si es un item de lista (formato: "1. texto" o "1) texto")
-              const esItemLista = /^\s*\d+[\.\)]\s+/.test(linea);
-              
-              if (esItemLista) {
-                if (!dentroLista) {
-                  dentroLista = true;
-                  contadorLista = 1;
-                }
-                // Reemplazar el número con el contador correcto
-                const textoSinNumero = linea.replace(/^\s*\d+[\.\)]\s+/, '');
-                const lineaCorregida = `${contadorLista}. ${textoSinNumero}`;
-                contadorLista++;
-                return lineaCorregida;
-              } else {
-                // Si no es item de lista, resetear el contador si estábamos en una lista
-                if (dentroLista && linea.trim() !== '') {
-                  dentroLista = false;
-                  contadorLista = 1;
-                }
-                return linea;
-              }
-            });
-            
-            respuestaLimpia = lineasProcesadas.join('\n');
-            
-            response = respuestaLimpia;
+            response = resultado.respuesta;
             state.data.assistantThreadId = resultado.threadId;
             // Mantener en el mismo estado para continuar la conversación
           }
