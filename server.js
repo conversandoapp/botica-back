@@ -448,6 +448,13 @@ app.post('/api/chat', async (req, res) => {
         }
         break;
 
+      case 'medicamento_nombre':
+        // Este estado solo se ejecuta UNA VEZ después de seleccionar opción 2
+        // No procesa ningún input del usuario, solo cambia al siguiente estado
+        state.step = 'medicamento_buscar';
+        response = 'Por favor escribe el nombre del medicamento que estás buscando';
+        break;
+
       case 'medicamento_buscar':
         try {
           const medicamento = await buscarMedicamentoEnSheet(message);
