@@ -364,6 +364,13 @@ app.post('/api/chat', async (req, res) => {
         }
         break;
 
+      case 'agendar_fecha':
+        response = `Por favor indica en qué día deseas agendar la cita. Escribe la fecha en formato: DD/MM/YYYY
+
+Ejemplo: 15/12/2024`;
+        state.step = 'agendar_verificar_horarios';
+        break;
+
       case 'agendar_verificar_horarios':
         try {
           const partes = message.split('/');
@@ -446,6 +453,11 @@ app.post('/api/chat', async (req, res) => {
         } else {
           response = 'Por favor indica una dirección de email válida';
         }
+        break;
+
+      case 'medicamento_nombre':
+        response = 'Por favor escribe el nombre del medicamento que estás buscando';
+        state.step = 'medicamento_buscar';
         break;
 
       case 'medicamento_buscar':
